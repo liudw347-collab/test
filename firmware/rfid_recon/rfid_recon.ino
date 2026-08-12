@@ -6,6 +6,8 @@
  *  Purpose  : 只读侦察 - 识别卡类型 / 尝试默认密钥 / dump 全部数据
  *  Author   : Attacker (Red Team)
  * ===================================================================
+ *  v1.3 回退到 IsNewCardPresent 检测（v1.2 的 WakeupA 干扰了卡检测）
+ *       ATQA 通过 REQIDL 命令单独探测，失败就用占位
  *  v1.2 修了 PICC_WakeupA 的参数（第二个参数是 byte*，不是整数）
  *  v1.1 修了 ATQA 字段兼容性问题（旧版库 Uid 结构无 atqa 字段）
  *  ⚠️ 本固件只读，不写卡、不修改任何数据。
@@ -66,7 +68,7 @@ void setup() {
 
   Serial.println();
   Serial.println(F("========================================"));
-  Serial.println(F("= RFID Recon v1.0 - ESP8266 + RC522    ="));
+  Serial.println(F("= RFID Recon v1.3 - ESP8266 + RC522    ="));
   Serial.println(F("= (c) Attacker - Read-Only Sweep       ="));
   Serial.println(F("========================================"));
   Serial.println(F("Waiting for card..."));
@@ -75,18 +77,13 @@ void setup() {
 
 /* -------- 主循环 -------- */
 void loop() {
-  /* 用 WakeupA 拿 ATQA（兼容旧版库） */
-  byte atqaBuf[2];
-  byte atqaLen = sizeof(atqaBuf);
-  MFRC522::StatusCode w = rfid.PICC_WakeupA(atqaBuf, &atqaLen);
-  if (w != MFRC522::STATUS_OK || atqaLen < 2) {
-    delay(50);
-    return;
-  }
-  atqa[0] = atqaBuf[0];
-  atqa[1] = atqaBuf[1];
-
+  /* 标准卡检测流程：IsNewCardPresent + ReadCardSerial
+   * 不要用 WakeupA 替代，会干扰 RC522 内部状态机 */
+  if (!rfid.PICC_IsNewCardPresent()) return;
   if (!rfid.PICC_ReadCardSerial()) return;
+
+  /* ATQA 取不到不影响后续，SAK 才是关键 */
+  atqa[0] = 0; atqa[1] = 0;
 
   Serial.println();
   Serial.println(F("================ CARD DETECTED ================"));
