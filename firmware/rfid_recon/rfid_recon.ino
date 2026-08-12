@@ -6,6 +6,7 @@
  *  Purpose  : 只读侦察 - 识别卡类型 / 尝试默认密钥 / dump 全部数据
  *  Author   : Attacker (Red Team)
  * ===================================================================
+ *  v1.2 修了 PICC_WakeupA 的参数（第二个参数是 byte*，不是整数）
  *  v1.1 修了 ATQA 字段兼容性问题（旧版库 Uid 结构无 atqa 字段）
  *  ⚠️ 本固件只读，不写卡、不修改任何数据。
  * ===================================================================
@@ -76,8 +77,9 @@ void setup() {
 void loop() {
   /* 用 WakeupA 拿 ATQA（兼容旧版库） */
   byte atqaBuf[2];
-  MFRC522::StatusCode w = rfid.PICC_WakeupA(atqaBuf, sizeof(atqaBuf));
-  if (w != MFRC522::STATUS_OK) {
+  byte atqaLen = sizeof(atqaBuf);
+  MFRC522::StatusCode w = rfid.PICC_WakeupA(atqaBuf, &atqaLen);
+  if (w != MFRC522::STATUS_OK || atqaLen < 2) {
     delay(50);
     return;
   }
