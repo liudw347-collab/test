@@ -6,6 +6,7 @@
  *  Purpose  : 只读侦察 - 识别卡类型 / 尝试默认密钥 / dump 全部数据
  *  Author   : Attacker (Red Team)
  * ===================================================================
+ *  v1.4 加 RC522 自检（读 VersionReg），加心跳，加详细错误提示
  *  v1.3 回退到 IsNewCardPresent 检测（v1.2 的 WakeupA 干扰了卡检测）
  *       ATQA 通过 REQIDL 命令单独探测，失败就用占位
  *  v1.2 修了 PICC_WakeupA 的参数（第二个参数是 byte*，不是整数）
@@ -64,22 +65,64 @@ void setup() {
   SPI.begin();
   rfid.PCD_Init();
   delay(50);
-  rfid.PCD_SetAntennaGain(rfid.RxGain_max);
 
   Serial.println();
   Serial.println(F("========================================"));
-  Serial.println(F("= RFID Recon v1.3 - ESP8266 + RC522    ="));
+  Serial.println(F("= RFID Recon v1.4 - ESP8266 + RC522    ="));
   Serial.println(F("= (c) Attacker - Read-Only Sweep       ="));
   Serial.println(F("========================================"));
+
+  /* ---------- RC522 自检 ---------- */
+  byte version = rfid.PCD_ReadRegister(rfid.VersionReg);
+  Serial.printf("RC522 VersionReg : 0x%02X\n", version);
+  /* 0x91 / 0x92 = MFRC522 (China clone / NXP)
+   * 0x88 = clones (sometimes)
+   * 0x00 / 0xFF = SPI 通信失败 */
+  if (version == 0x00 || version == 0xFF) {
+    Serial.println(F(">>> RC522 NOT RESPONDING <<<"));
+    Serial.println(F(">>> SPI communication failed."));
+    Serial.println(F(">>> Checklist:"));
+    Serial.println(F(">>>   1. RC522 VCC -> NodeMCU 3V3 (NOT VIN/5V)"));
+    Serial.println(F(">>>   2. RC522 GND -> NodeMCU GND"));
+    Serial.println(F(">>>   3. RC522 SDA  -> NodeMCU D8 (GPIO15)"));
+    Serial.println(F(">>>   4. RC522 SCK  -> NodeMCU D5 (GPIO14)"));
+    Serial.println(F(">>>   5. RC522 MOSI -> NodeMCU D7 (GPIO13)"));
+    Serial.println(F(">>>   6. RC522 MISO -> NodeMCU D6 (GPIO12)"));
+    Serial.println(F(">>>   7. RC522 RST  -> NodeMCU D0 (GPIO16)"));
+    Serial.println(F(">>>   8. RC522 module's power LED should be ON"));
+    Serial.println(F(">>>   9. If LED is off, RC522 may be dead (5V burned it)"));
+    Serial.println(F(">>>   10. Check header soldering on RC522 board"));
+    Serial.println(F(">>> Firmware halts. Fix wiring then reset ESP8266."));
+    while (true) { delay(1000); }
+  }
+  Serial.printf(">>> RC522 alive (version 0x%02X). Good.\n", version);
+
+  rfid.PCD_SetAntennaGain(rfid.RxGain_max);
+  Serial.println(F("Antenna gain set to max."));
   Serial.println(F("Waiting for card..."));
   Serial.println(F("Put your access card on the reader."));
 }
 
 /* -------- 主循环 -------- */
+unsigned long lastHeartbeat = 0;
+int heartbeatCount = 0;
 void loop() {
   /* 标准卡检测流程：IsNewCardPresent + ReadCardSerial
    * 不要用 WakeupA 替代，会干扰 RC522 内部状态机 */
-  if (!rfid.PICC_IsNewCardPresent()) return;
+  if (!rfid.PICC_IsNewCardPresent()) {
+    /* 心跳：每 2 秒打印一个点，让用户知道固件还活着 */
+    if (millis() - lastHeartbeat > 2000) {
+      lastHeartbeat = millis();
+      heartbeatCount++;
+      Serial.print(F("."));
+      if (heartbeatCount % 30 == 0) {
+        Serial.println();
+        Serial.println(F("(still waiting - if card is on reader and no reaction,"));
+        Serial.println(F(" try lifting card 2-3mm above the antenna)"));
+      }
+    }
+    return;
+  }
   if (!rfid.PICC_ReadCardSerial()) return;
 
   /* ATQA 取不到不影响后续，SAK 才是关键 */
