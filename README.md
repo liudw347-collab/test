@@ -25,6 +25,19 @@
 
 ## 运行步骤
 
+### 如果 v1.4 报 "RC522 NOT RESPONDING"
+
+先烧录 `firmware/pin_scan/pin_scan.ino` 这个诊断固件：
+
+1. **保持现在的接线完全不动**
+2. 打开 `firmware/pin_scan/pin_scan.ino`，烧录
+3. 串口 115200，复位 ESP8266
+4. 看输出：
+   - 如果有 `[HIT] SS=xx RST=xx`：按提示把 SS 和 RST 改接到那两个引脚，再烧 v1.4
+   - 如果所有组合都 `[FAIL]`：问题在 SCK/MOSI/MISO/电源，按输出的 next steps 用万用表排查
+
+### 正常侦察流程（RC522 已通时）
+
 1. 打开 `firmware/rfid_recon/rfid_recon.ino` 烧录到 ESP8266
 2. 打开串口监视器，波特率 **115200**
 3. 把你的**合法门禁卡**放到 RC522 上
