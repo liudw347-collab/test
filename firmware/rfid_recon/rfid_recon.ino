@@ -1,11 +1,12 @@
 /*
  * ===================================================================
- *  RFID 门禁系统侦察固件 v1.0
+ *  RFID 门禁系统侦察固件 v1.1
  *  Platform : ESP8266 (NodeMCU 1.0) + RC522
- *  Library  : MFRC522 by miguelbalboa (Library Manager 安装)
+ *  Library  : MFRC522 by miguelbalboa (Library Manager 安装, 兼容 1.4.x)
  *  Purpose  : 只读侦察 - 识别卡类型 / 尝试默认密钥 / dump 全部数据
  *  Author   : Attacker (Red Team)
  * ===================================================================
+ *  v1.1 修了 ATQA 字段兼容性问题（旧版库 Uid 结构无 atqa 字段）
  *  ⚠️ 本固件只读，不写卡、不修改任何数据。
  * ===================================================================
  */
@@ -19,6 +20,9 @@
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 MFRC522::MIFARE_Key key;
+
+/* ATQA 需要单独取（旧版 MFRC522 库的 Uid 结构里没有这个字段） */
+byte atqa[2] = {0, 0};
 
 /* -------- 10 组最常见的默认 / 弱密钥 -------- */
 const byte DEFAULT_KEYS[][6] = {
@@ -70,7 +74,16 @@ void setup() {
 
 /* -------- 主循环 -------- */
 void loop() {
-  if (!rfid.PICC_IsNewCardPresent()) return;
+  /* 用 WakeupA 拿 ATQA（兼容旧版库） */
+  byte atqaBuf[2];
+  MFRC522::StatusCode w = rfid.PICC_WakeupA(atqaBuf, sizeof(atqaBuf));
+  if (w != MFRC522::STATUS_OK) {
+    delay(50);
+    return;
+  }
+  atqa[0] = atqaBuf[0];
+  atqa[1] = atqaBuf[1];
+
   if (!rfid.PICC_ReadCardSerial()) return;
 
   Serial.println();
@@ -87,9 +100,7 @@ void loop() {
   Serial.printf("UID length: %d bytes\n", rfid.uid.size);
 
   /* --- ATQA / SAK --- */
-  Serial.printf("ATQA      : %02X %02X\n",
-                rfid.uid.atqa & 0xFF,
-                (rfid.uid.atqa >> 8) & 0xFF);
+  Serial.printf("ATQA      : %02X %02X\n", atqa[0], atqa[1]);
   Serial.printf("SAK       : %02X\n", rfid.uid.sak);
 
   MFRC522::PICC_Type pt = rfid.PICC_GetType(rfid.uid.sak);
